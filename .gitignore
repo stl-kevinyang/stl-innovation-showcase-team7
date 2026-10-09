@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+pipelines/osm_region_roads/out/
+pipelines/osm_region_roads/work/
+pipelines/osm_region_roads/.venv/
+*.osm.pbf
+*.partial
+*.gstmp
+.DS_Store

@@ -1,0 +1,12 @@
+geopandas>=0.14
+shapely>=2.0
+google-cloud-bigquery>=3.14
+google-cloud-bigquery-storage>=2.24
+db-dtypes>=1.2
+psycopg2-binary>=2.9
+sqlalchemy>=2.0
+geoalchemy2>=0.14
+pyarrow>=14.0
+fiona>=1.9
+pyproj>=3.6
+pandas>=2.0
