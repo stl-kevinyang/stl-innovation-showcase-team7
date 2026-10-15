@@ -1,6 +1,6 @@
 # OSM region road features → dell4db
 
-Clip an OSM snapshot from `gs://osm-map-archive` to a region polygon, load highway way tags into **dell4db** `innovation_team7`, and attach StreetLight annual segment metrics (`ma_tt3` all-vehicle metrics + Medium/Heavy Duty truck metrics from `ma_gt3`) via Zone Library `segment_id` → `osm_id`.
+Clip an OSM snapshot from `gs://osm-map-archive` to a region polygon, load highway way tags into **dell4db** `innovation_team7`, and attach SATC metrics (`ma_tt3` all-vehicle metrics + Medium/Heavy Duty truck metrics from `ma_gt3`) via Zone Library `segment_id` → `osm_id`.
 
 ## Archive
 
