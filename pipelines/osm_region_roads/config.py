@@ -109,7 +109,7 @@ SOURCE_REGION_BBOXES: dict[str, tuple[float, float, float, float]] = {
 # dell4db targets
 PG_SCHEMA = "innovation_team7"
 DEFAULT_ZL_TABLE = "reference.zone_usca_osm_all_202501"
-DEFAULT_METRICS_YEAR = 2024
+DEFAULT_METRICS_YEAR = 2025
 DEFAULT_DAY_TYPE = -3  # average day
 DEFAULT_DAY_PART = -10  # all day
 DELL4DB_HOST = "gcp-db-02.streetlightdata.net"

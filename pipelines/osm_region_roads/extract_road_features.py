@@ -7,7 +7,7 @@ Example:
       --region-name charlottesville_va \\
       --vintage 25-Jan-31 \\
       --zl-table reference.zone_usca_osm_all_202501 \\
-      --year 2024
+      --year 2025
 """
 
 from __future__ import annotations

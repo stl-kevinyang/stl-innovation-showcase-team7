@@ -33,7 +33,7 @@ ma_tt3.segment_annual_data_output.segment_id
 
 - `day_type = -3` (average day)
 - `day_part = -10` (all day)
-- `--year` (e.g. 2024)
+- `--year` (e.g. 2025)
 
 | Feature | Source |
 |---------|--------|
@@ -72,7 +72,7 @@ python extract_road_features.py \
   --region-name charlottesville_va \
   --vintage 25-Jan-31 \
   --zl-table reference.zone_usca_osm_all_202501 \
-  --year 2024 \
+  --year 2025 \
   --work-dir ./work
 ```
 
