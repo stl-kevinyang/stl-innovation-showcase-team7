@@ -15,6 +15,7 @@ from psycopg2 import sql
 from shapely.geometry import MultiPolygon, Polygon
 
 from config import ROAD_FEATURE_TAGS
+from lib.bq_metrics import CLASS_COLUMNS
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,20 @@ def apply_ddl(conn, ddl_path: Path | None = None) -> None:
     ddl = ddl_path.read_text()
     with conn.cursor() as cur:
         cur.execute(ddl)
+    conn.commit()
+    ensure_class_columns(conn)
+
+
+def ensure_class_columns(conn) -> None:
+    """Add md_*/hd_* columns (and drop legacy truck_trips_volume) on existing tables."""
+    add = ", ".join(f"ADD COLUMN IF NOT EXISTS {c} {pg}" for c, pg in CLASS_COLUMNS)
+    with conn.cursor() as cur:
+        cur.execute(f"ALTER TABLE {SCHEMA}.segment_metrics {add}")
+        cur.execute(f"ALTER TABLE {SCHEMA}.segment_metrics DROP COLUMN IF EXISTS truck_trips_volume")
+        cur.execute("SELECT to_regclass(%s)", (f"{SCHEMA}.road_segment_enriched",))
+        if cur.fetchone()[0] is not None:
+            cur.execute(f"ALTER TABLE {SCHEMA}.road_segment_enriched {add}")
+            cur.execute(f"ALTER TABLE {SCHEMA}.road_segment_enriched DROP COLUMN IF EXISTS truck_trips_volume")
     conn.commit()
 
 
@@ -206,7 +221,19 @@ def resolve_zl_segments(
     return df
 
 
+def _py(v):
+    """Convert a pandas/numpy cell to a psycopg2-friendly value (NaN/None -> None)."""
+    if v is None:
+        return None
+    if isinstance(v, (list, tuple)):
+        return list(v)
+    if pd.isna(v):
+        return None
+    return v.item() if hasattr(v, "item") else v
+
+
 def write_segment_metrics(conn, region_id: int, df: pd.DataFrame) -> int:
+    ensure_class_columns(conn)
     with conn.cursor() as cur:
         cur.execute(
             f"DELETE FROM {SCHEMA}.segment_metrics WHERE region_id = %s",
@@ -216,6 +243,7 @@ def write_segment_metrics(conn, region_id: int, df: pd.DataFrame) -> int:
         conn.commit()
         return 0
 
+    class_names = [c for c, _ in CLASS_COLUMNS]
     cols = [
         "region_id",
         "segment_id",
@@ -226,9 +254,9 @@ def write_segment_metrics(conn, region_id: int, df: pd.DataFrame) -> int:
         "day_type",
         "day_part",
         "trips_volume",
-        "truck_trips_volume",
         "avg_speed",
         "speed_percentiles",
+        *class_names,
     ]
     out = df.copy()
     out["region_id"] = region_id
@@ -237,9 +265,9 @@ def write_segment_metrics(conn, region_id: int, df: pd.DataFrame) -> int:
     insert_sql = f"""
         INSERT INTO {SCHEMA}.segment_metrics (
             region_id, segment_id, zone_id, osm_id, year, match_dir, day_type, day_part,
-            trips_volume, truck_trips_volume, avg_speed, speed_percentiles
+            trips_volume, avg_speed, speed_percentiles, {", ".join(class_names)}
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            {", ".join(["%s"] * (11 + len(class_names)))}
         )
     """
     rows = []
@@ -258,9 +286,9 @@ def write_segment_metrics(conn, region_id: int, df: pd.DataFrame) -> int:
                 int(r["day_type"]),
                 int(r["day_part"]),
                 None if pd.isna(r["trips_volume"]) else int(r["trips_volume"]),
-                None if pd.isna(r["truck_trips_volume"]) else int(r["truck_trips_volume"]),
                 None if pd.isna(r["avg_speed"]) else float(r["avg_speed"]),
                 pct,
+                *[_py(r[c]) for c in class_names],
             )
         )
     with conn.cursor() as cur:
@@ -273,8 +301,18 @@ def write_segment_metrics(conn, region_id: int, df: pd.DataFrame) -> int:
 def ensure_enriched_table(conn) -> None:
     """Create materialized enriched table (drop legacy view if present)."""
     tag_cols = ",\n        ".join(f"{_tag_column(t)} text" for t in ROAD_FEATURE_TAGS)
+    class_defs = ",\n                ".join(f"{c} {pg}" for c, pg in CLASS_COLUMNS)
     with conn.cursor() as cur:
-        cur.execute(f"DROP VIEW IF EXISTS {SCHEMA}.road_segment_enriched")
+        cur.execute(
+            f"""
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname = '{SCHEMA}' AND viewname = 'road_segment_enriched') THEN
+                    DROP VIEW {SCHEMA}.road_segment_enriched;
+                END IF;
+            END $$
+            """
+        )
         cur.execute(
             f"""
             CREATE TABLE IF NOT EXISTS {SCHEMA}.road_segment_enriched (
@@ -287,9 +325,9 @@ def ensure_enriched_table(conn) -> None:
                 day_type           integer NOT NULL,
                 day_part           integer NOT NULL,
                 trips_volume       integer,
-                truck_trips_volume integer,
                 avg_speed          double precision,
                 speed_percentiles  integer[],
+                {class_defs},
                 {tag_cols},
                 geom               geometry(LineString, 4326) NOT NULL,
                 PRIMARY KEY (region_id, segment_id, year, match_dir, day_type, day_part)
@@ -309,16 +347,20 @@ def ensure_enriched_table(conn) -> None:
             """
         )
     conn.commit()
+    ensure_class_columns(conn)
 
 
 def refresh_enriched_table(conn, region_id: int) -> int:
     """Rebuild materialized road_segment_enriched rows for one region."""
     ensure_enriched_table(conn)
+    class_names = ", ".join(c for c, _ in CLASS_COLUMNS)
+    class_select = ", ".join(f"m.{c}" for c, _ in CLASS_COLUMNS)
     tag_cols = ", ".join(f"w.{_tag_column(t)}" for t in ROAD_FEATURE_TAGS)
     insert_sql = f"""
         INSERT INTO {SCHEMA}.road_segment_enriched (
             region_id, segment_id, zone_id, osm_id, year, match_dir, day_type, day_part,
-            trips_volume, truck_trips_volume, avg_speed, speed_percentiles,
+            trips_volume, avg_speed, speed_percentiles,
+            {class_names},
             {", ".join(_tag_column(t) for t in ROAD_FEATURE_TAGS)},
             geom
         )
@@ -332,9 +374,9 @@ def refresh_enriched_table(conn, region_id: int) -> int:
             m.day_type,
             m.day_part,
             m.trips_volume,
-            m.truck_trips_volume,
             m.avg_speed,
             m.speed_percentiles,
+            {class_select},
             {tag_cols},
             w.geom
         FROM {SCHEMA}.segment_metrics m

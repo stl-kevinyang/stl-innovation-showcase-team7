@@ -24,9 +24,10 @@ CREATE TABLE IF NOT EXISTS innovation_team7.segment_metrics (
     day_type           integer NOT NULL,
     day_part           integer NOT NULL,
     trips_volume       integer,
-    truck_trips_volume integer,
     avg_speed          double precision,
     speed_percentiles  integer[],
+    -- md_* / hd_* (Medium / Heavy Duty truck metrics from ma_gt3) columns are added by
+    -- the pipeline (lib/db.ensure_class_columns).
     PRIMARY KEY (region_id, segment_id, year, match_dir, day_type, day_part)
 );
 
@@ -39,4 +40,9 @@ CREATE INDEX IF NOT EXISTS innovation_team7_segment_metrics_segment_id_idx
 -- road_segment_enriched is a materialized table (not a view).
 -- Tag columns are created/ensured by the pipeline (lib/db.ensure_enriched_table).
 -- Legacy view name is dropped on refresh if present.
-DROP VIEW IF EXISTS innovation_team7.road_segment_enriched;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname = 'innovation_team7' AND viewname = 'road_segment_enriched') THEN
+        DROP VIEW innovation_team7.road_segment_enriched;
+    END IF;
+END $$;
